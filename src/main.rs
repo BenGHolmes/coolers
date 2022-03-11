@@ -1,5 +1,11 @@
-use coolers::Lex;
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    str::Chars,
+};
+
 use clap::{ArgEnum, Parser};
+use coolers::{CharBuffer, Lex};
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -23,15 +29,18 @@ fn main() {
     let args = Args::parse();
     match args.stage {
         Some(CompilerStage::Lexer) => {
-            println!("Lexing {}", args.file)
-        },
+            println!("Lexing {}", args.file);
+            Lex(CharBuffer::new(args.file));
+        }
         None => println!("Compiling {}", args.file),
     }
-
 }
 
 /// Return Ok if file ends with ".cl" extension, otherwise error
 fn assert_cl_file(s: &str) -> Result<(), String> {
-    if s.ends_with(".cl") {Ok(())}
-    else {Err(format!("{} is not a COOL (.cl) file.", s))}
+    if s.ends_with(".cl") {
+        Ok(())
+    } else {
+        Err(format!("{} is not a COOL (.cl) file.", s))
+    }
 }

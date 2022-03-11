@@ -1,4 +1,9 @@
-use std::fmt;
+use std::{
+    fmt,
+    fs::File,
+    io::{BufRead, BufReader, Lines},
+    str::Chars,
+};
 
 /// Parsed token.
 /// Stores the kind of token parsed as well as the line number of the program
@@ -9,7 +14,7 @@ pub struct Token {
 
 impl Token {
     fn new(kind: TokenKind, line: usize) -> Token {
-        Token{kind, line}
+        Token { kind, line }
     }
 }
 
@@ -22,7 +27,7 @@ impl fmt::Display for Token {
 /// Enum for the lexeme types.
 pub enum TokenKind {
     // Literals
-    /// Integer literal, 
+    /// Integer literal,
     Integer(isize),
     /// Strings
     String(String),
@@ -57,10 +62,10 @@ pub enum TokenKind {
     New,
     In,
     Of,
-    
+
     // One-char tokens
-    /// ; 
-    Semi,    
+    /// ;
+    Semi,
     /// ","
     Comma,
     /// "."
@@ -109,7 +114,7 @@ impl fmt::Display for TokenKind {
             Self::TypeIdent(id) => write!(f, "TYPEID {}", id),
             Self::SelfType => write!(f, "TYPEID SELF_TYPE"),
             Self::ObjIdent(id) => write!(f, "OBJECTID {}", id),
-            Self::SelfIdent => write!(f, "OBJECTID self"),            
+            Self::SelfIdent => write!(f, "OBJECTID self"),
             Self::Class => write!(f, "CLASS"),
             Self::Inherits => write!(f, "INHERITS"),
             Self::IsVoid => write!(f, "ISVOID"),
@@ -147,11 +152,69 @@ impl fmt::Display for TokenKind {
             Self::Slash => write!(f, "'/'"),
             Self::Assign => write!(f, "ASSIGN"),
             Self::DArrow => write!(f, "DARROW"),
-            Self::LE => write!(f, "LE")
+            Self::LE => write!(f, "LE"),
         }
     }
 }
 
-pub fn Lex(s: String) -> Vec<Token> {
+pub struct CharBuffer {
+    lines: Lines<BufReader<File>>,
+    cur_line: String,
+    line_num: usize,
+}
+
+impl CharBuffer {
+    pub fn new(filename: String) -> Self {
+        let buffer = BufReader::new(File::open(filename).expect("failed to open file"));
+        let mut lines = buffer.lines();
+        let cur_line = lines.next().expect("empty file").expect("read error");
+        Self {
+            lines,
+            cur_line,
+            line_num: 1,
+        }
+    }
+
+    /// Peek the next character, without crossing to new line
+    pub fn peek(&self) -> Option<char> {
+        self.cur_line.chars().next()
+    }
+}
+
+impl Iterator for CharBuffer {
+    type Item = (usize, char);
+    fn next(&mut self) -> Option<(usize, char)> {
+        while self.cur_line == "" {
+            match self.lines.next() {
+                Some(line) => {
+                    self.line_num += 1;
+                    self.cur_line = line.expect("file error");
+                }
+                None => return None,
+            }
+        }
+
+        let mut chars = self.cur_line.chars();
+        let next_char = chars.next();
+        self.cur_line = chars.collect::<String>();
+
+        match next_char {
+            Some(c) => Some((self.line_num, c)),
+            None => None,
+        }
+    }
+}
+
+pub fn Lex(buf: CharBuffer) -> Vec<Token> {
+    let mut last_line = 0;
+    for (line, char) in buf {
+        if line != last_line {
+            last_line = line;
+            print!("\n#{}: {}", line, char)
+        } else {
+            print!("{}", char)
+        }
+    }
+
     vec![]
 }
