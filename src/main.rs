@@ -6,10 +6,11 @@ use clap::{ArgEnum, Parser};
 #[clap(author, version, about, long_about = None)]
 struct Args {
     /// Compiler stage to run
-    #[clap(short, long, arg_enum)]
-    stage: CompilerStage,
+    #[clap(arg_enum, short, long)]
+    stage: Option<CompilerStage>,
 
-    #[clap(short, long, required)]
+    /// COOL file to compile
+    #[clap(validator = assert_cl_file)]
     file: String,
 }
 
@@ -21,9 +22,16 @@ enum CompilerStage {
 fn main() {
     let args = Args::parse();
     match args.stage {
-        Lexer => {
-            println!("Running lexer")
-        }
+        Some(CompilerStage::Lexer) => {
+            println!("Lexing {}", args.file)
+        },
+        None => println!("Compiling {}", args.file),
     }
 
+}
+
+/// Return Ok if file ends with ".cl" extension, otherwise error
+fn assert_cl_file(s: &str) -> Result<(), String> {
+    if s.ends_with(".cl") {Ok(())}
+    else {Err(format!("{} is not a COOL (.cl) file.", s))}
 }
