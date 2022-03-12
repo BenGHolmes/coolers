@@ -205,67 +205,118 @@ impl Iterator for CharBuffer {
     }
 }
 
-pub fn Lex(buf: CharBuffer) -> Vec<Token> {
+fn parse_digits(c: char, buf: &mut CharBuffer) -> usize {
+    let mut value = c.to_digit(10).unwrap();
+    while buf.peek().unwrap_or_default().is_digit(10) {
+        value *= 10;
+        value += buf.next().unwrap().1.to_digit(10).unwrap();
+    }
+
+    value as usize
+}
+
+fn parse_str(c: char, buf: &mut CharBuffer) -> String {
+    let mut s = String::from(c);
+    while buf.peek().unwrap_or_default().is_alphanumeric() {
+        s.push(buf.next().unwrap().1);
+    }
+
+    s
+}
+
+fn match_string_token(s: String) -> TokenKind {
+    match s.to_lowercase().as_str() {
+        // Keywords
+        "class" => TokenKind::Class,
+        "inherits" => TokenKind::Inherits,
+        "isvoid" => TokenKind::IsVoid,
+        "true" if s.chars().next().unwrap().is_lowercase()  => TokenKind::True,
+        "false"  if s.chars().next().unwrap().is_lowercase() => TokenKind::False,
+        "not"  => TokenKind::Not,
+        "if"  =>  TokenKind::If, 
+        "then"  => TokenKind::Then,
+        "else"  => TokenKind::Else,
+        "fi"  => TokenKind::Fi, 
+        "loop"  => TokenKind::Loop,
+        "pool"  => TokenKind::Pool,
+        "while"  => TokenKind::While,
+        "case"  =>  TokenKind::Case, 
+        "esac"  => TokenKind::Esac, 
+        "let"  => TokenKind::Let, 
+        "new"  =>  TokenKind::New,
+        "in"  => TokenKind::In, 
+        "of"  => TokenKind::Of,
+        // Types
+        _ if s.chars().next().unwrap().is_uppercase() => {
+            match s.as_str() {
+                "SELF_TYPE" => TokenKind::SelfType,
+                _ => TokenKind::TypeIdent(s),
+            }
+        }
+        _ => {
+            match s.as_str() {
+                "self" => TokenKind::SelfIdent,
+                _ => TokenKind::ObjIdent(s),
+            }
+        }
+    }
+}
+
+pub fn Lex(mut buf: CharBuffer) -> Vec<Token> {
     let mut tokens = vec![];
 
     while let Some((line,char)) = buf.next() {
         let token = match char {
-            // Integer literal (negatives parsed as "-" "INT_lITERAL" so these are always unsigned)
-            c if c.is_digit(10) => {
-                let mut value = c.to_digit(10).unwrap();
-                while buf.peek().unwrap_or_default().is_digit(10) {
-                    value *= 10;
-                    value += buf.next().unwrap().1.to_digit(10).unwrap();
+            // Ignore whitespace
+            c if c.is_whitespace() => {
+                while buf.peek().unwrap_or_default().is_whitespace() {
+                    buf.next();
+                }
+                None
+            }
+            // Ignore linecomments
+            '-' if buf.peek().unwrap_or_default() == '-' => {
+                // peek returns None at the end of the line, so this 
+                // eats the rest of the line
+                while buf.peek().is_some() {
+                    buf.next();
+                }
+                None
+            }
+            // Ignore multiline comments
+            '(' if buf.peek().unwrap_or_default() == '*' => {
+                buf.next(); // Eat '*'
+                let mut comment_depth = 1;
+                
+                while comment_depth != 0 {
+                    let c = buf.next().unwrap().1;
+                    if c == '(' && buf.peek().unwrap_or_default() == '*' {
+                        buf.next();
+                        comment_depth += 1;
+                    } else if c == '*' && buf.peek().unwrap_or_default() == ')' {
+                        buf.next();
+                        comment_depth -= 1;
+                    }
                 }
 
+                None
+            }
+            // Integer literal (negatives parsed as "-" "INT_lITERAL" so these are always unsigned)
+            c if c.is_digit(10) => {
+                let value = parse_digits(c, &mut buf);
                 Some(Token{kind: TokenKind::Integer(value as usize), line})
             },
             // Keywords and identifiers
             c => {
-                let mut s = String::from(c);
-                while buf.peek().unwrap_or_default().is_alphanumeric() {
-                    s.push(buf.next().unwrap().1);
-                }
-                match s.to_lowercase().as_str() {
-                    // Keywords
-                    "class" => Some(Token{kind: TokenKind::Class, line}),
-                    "inherits" => Some(Token{kind: TokenKind::Inherits, line}),
-                    "isvoid" => Some(Token{kind: TokenKind::IsVoid, line}),
-                    "true" if s.chars().next().unwrap().is_lowercase()  => Some(Token{kind: TokenKind::True, line}),
-                    "false"  if s.chars().next().unwrap().is_lowercase() => Some(Token{kind: TokenKind::False, line}),
-                    "not"  => Some(Token{kind: TokenKind::Not, line}),
-                    "if"  => Some(Token{kind: TokenKind::If, line}),
-                    "then"  => Some(Token{kind: TokenKind::Then, line}),
-                    "else"  => Some(Token{kind: TokenKind::Else, line}),
-                    "fi"  => Some(Token{kind: TokenKind::Fi, line}),
-                    "loop"  => Some(Token{kind: TokenKind::Loop, line}),
-                    "pool"  => Some(Token{kind: TokenKind::Pool, line}),
-                    "while"  => Some(Token{kind: TokenKind::While, line}),
-                    "case"  => Some(Token{kind: TokenKind::Case, line}),
-                    "esac"  => Some(Token{kind: TokenKind::Esac, line}),
-                    "let"  => Some(Token{kind: TokenKind::Let, line}),
-                    "new"  => Some(Token{kind: TokenKind::New, line}),
-                    "in"  => Some(Token{kind: TokenKind::In, line}),
-                    "of"  => Some(Token{kind: TokenKind::Of, line}),
-                    // Types
-                    _ if s.chars().next().unwrap().is_uppercase() => {
-                        match s.as_str() {
-                            "SELF_TYPE" => Some(Token{kind: TokenKind::SelfType, line}),
-                            _ => Some(Token{kind: TokenKind::TypeIdent(s), line})
-                        }
-                    }
-                    _ => {
-                        match s.as_str() {
-                            "self" => Some(Token{kind: TokenKind::SelfIdent,line}),
-                            _ => Some(Token{kind: TokenKind::ObjIdent(s), line})
-                        }
-                    }
-                }
+                let s = parse_str(c, &mut buf);
+                let kind = match_string_token(s);
+                Some(Token{kind,line})
             }
+        };
 
+        if token.is_some() {
+            tokens.push(token.unwrap())
         }
-
-        tokens.push(token)
     }
     
     tokens
