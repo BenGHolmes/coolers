@@ -29,8 +29,10 @@ fn main() {
     let args = Args::parse();
     match args.stage {
         Some(CompilerStage::Lexer) => {
-            println!("Lexing {}", args.file);
-            Lex(CharBuffer::new(args.file));
+            let tokens = Lex(CharBuffer::new(args.file));
+            for t in tokens {
+                println!("{}", t)
+            }
         }
         None => println!("Compiling {}", args.file),
     }

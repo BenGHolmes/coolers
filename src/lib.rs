@@ -28,7 +28,7 @@ impl fmt::Display for Token {
 pub enum TokenKind {
     // Literals
     /// Integer literal,
-    Integer(isize),
+    Integer(usize),
     /// Strings
     String(String),
 
@@ -206,15 +206,67 @@ impl Iterator for CharBuffer {
 }
 
 pub fn Lex(buf: CharBuffer) -> Vec<Token> {
-    let mut last_line = 0;
-    for (line, char) in buf {
-        if line != last_line {
-            last_line = line;
-            print!("\n#{}: {}", line, char)
-        } else {
-            print!("{}", char)
-        }
-    }
+    let mut tokens = vec![];
 
-    vec![]
+    while let Some((line,char)) = buf.next() {
+        let token = match char {
+            // Integer literal (negatives parsed as "-" "INT_lITERAL" so these are always unsigned)
+            c if c.is_digit(10) => {
+                let mut value = c.to_digit(10).unwrap();
+                while buf.peek().unwrap_or_default().is_digit(10) {
+                    value *= 10;
+                    value += buf.next().unwrap().1.to_digit(10).unwrap();
+                }
+
+                Some(Token{kind: TokenKind::Integer(value as usize), line})
+            },
+            // Keywords and identifiers
+            c => {
+                let mut s = String::from(c);
+                while buf.peek().unwrap_or_default().is_alphanumeric() {
+                    s.push(buf.next().unwrap().1);
+                }
+                match s.to_lowercase().as_str() {
+                    // Keywords
+                    "class" => Some(Token{kind: TokenKind::Class, line}),
+                    "inherits" => Some(Token{kind: TokenKind::Inherits, line}),
+                    "isvoid" => Some(Token{kind: TokenKind::IsVoid, line}),
+                    "true" if s.chars().next().unwrap().is_lowercase()  => Some(Token{kind: TokenKind::True, line}),
+                    "false"  if s.chars().next().unwrap().is_lowercase() => Some(Token{kind: TokenKind::False, line}),
+                    "not"  => Some(Token{kind: TokenKind::Not, line}),
+                    "if"  => Some(Token{kind: TokenKind::If, line}),
+                    "then"  => Some(Token{kind: TokenKind::Then, line}),
+                    "else"  => Some(Token{kind: TokenKind::Else, line}),
+                    "fi"  => Some(Token{kind: TokenKind::Fi, line}),
+                    "loop"  => Some(Token{kind: TokenKind::Loop, line}),
+                    "pool"  => Some(Token{kind: TokenKind::Pool, line}),
+                    "while"  => Some(Token{kind: TokenKind::While, line}),
+                    "case"  => Some(Token{kind: TokenKind::Case, line}),
+                    "esac"  => Some(Token{kind: TokenKind::Esac, line}),
+                    "let"  => Some(Token{kind: TokenKind::Let, line}),
+                    "new"  => Some(Token{kind: TokenKind::New, line}),
+                    "in"  => Some(Token{kind: TokenKind::In, line}),
+                    "of"  => Some(Token{kind: TokenKind::Of, line}),
+                    // Types
+                    _ if s.chars().next().unwrap().is_uppercase() => {
+                        match s.as_str() {
+                            "SELF_TYPE" => Some(Token{kind: TokenKind::SelfType, line}),
+                            _ => Some(Token{kind: TokenKind::TypeIdent(s), line})
+                        }
+                    }
+                    _ => {
+                        match s.as_str() {
+                            "self" => Some(Token{kind: TokenKind::SelfIdent,line}),
+                            _ => Some(Token{kind: TokenKind::ObjIdent(s), line})
+                        }
+                    }
+                }
+            }
+
+        }
+
+        tokens.push(token)
+    }
+    
+    tokens
 }
