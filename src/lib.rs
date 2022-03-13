@@ -215,9 +215,17 @@ fn parse_digits(c: char, buf: &mut CharBuffer) -> usize {
     value as usize
 }
 
+fn is_ident(c: char) -> bool {
+    match c {
+        c if c.is_alphanumeric() => true,
+        '_' => true,
+        _ => false
+    }
+}
+
 fn parse_str(c: char, buf: &mut CharBuffer) -> String {
     let mut s = String::from(c);
-    while buf.peek().unwrap_or_default().is_alphanumeric() {
+    while is_ident(buf.peek().unwrap_or_default()) {
         s.push(buf.next().unwrap().1);
     }
 
@@ -298,14 +306,62 @@ pub fn Lex(mut buf: CharBuffer) -> Vec<Token> {
                         comment_depth -= 1;
                     }
                 }
-
                 None
             }
             // Integer literal (negatives parsed as "-" "INT_lITERAL" so these are always unsigned)
             c if c.is_digit(10) => {
                 let value = parse_digits(c, &mut buf);
                 Some(Token{kind: TokenKind::Integer(value as usize), line})
+            },  
+            // String literal
+            '"' => {
+                let mut s = String::new();
+                while buf.peek().unwrap_or_default() != '"' {
+                    // TODO: Handle escaped newlines, quotes, etc.
+                    s.push(buf.next().unwrap_or_default().1);
+                }
+                buf.next();  // Eat the last "
+                Some(Token{kind:TokenKind::String(s), line})
             },
+            // One and two char tokens
+            ';' => Some(Token{kind:TokenKind::Semi, line}),
+            ',' => Some(Token{kind:TokenKind::Comma, line}),
+            '.' => Some(Token{kind:TokenKind::Dot, line}),
+            '(' => Some(Token{kind:TokenKind::OpenParen, line}),
+            ')' => Some(Token{kind:TokenKind::CloseParen, line}),
+            '{' => Some(Token{kind:TokenKind::OpenBrace, line}),
+            '}' => Some(Token{kind:TokenKind::CloseBrace, line}),
+            '@' => Some(Token{kind:TokenKind::At, line}),
+            '~' => Some(Token{kind:TokenKind::Tilde, line}),
+            ':' => Some(Token{kind:TokenKind::Colon, line}),
+            '=' => {
+                match buf.peek().unwrap_or_default() {
+                    
+                    '>' => {
+                        buf.next();
+                        Some(Token{kind: TokenKind::DArrow, line})
+                    },
+                    _ => Some(Token{kind:TokenKind::Eq, line})
+                }
+            },
+            '<' => {
+                match buf.peek().unwrap_or_default() {
+                    '-' => {
+                        buf.next();
+                        Some(Token{kind: TokenKind::Assign, line})
+                    }
+                    '=' => {
+                        buf.next();
+                        Some(Token{kind: TokenKind::LE, line})
+                    }
+                    _ => Some(Token{kind:TokenKind::Lt, line}),
+                }
+            },    
+            '-' => Some(Token{kind:TokenKind::Minus, line}),
+            '+' => Some(Token{kind:TokenKind::Plus, line}),
+            '*' => Some(Token{kind:TokenKind::Star, line}),
+            '/' => Some(Token{kind:TokenKind::Slash, line}),
+
             // Keywords and identifiers
             c => {
                 let s = parse_str(c, &mut buf);
