@@ -232,6 +232,73 @@ fn parse_str(c: char, buf: &mut CharBuffer) -> String {
     s
 }
 
+fn parse_str_literal(buf: &mut CharBuffer) -> String {
+    let mut s = String::new();
+    let mut escaped = false;
+
+    loop {
+        match buf.peek() {
+            // Some escaped char
+            Some(c) if escaped => {
+                match c {
+                    // '\b' is backspace, so we pop the last character
+                    'b' => {s.pop();},
+                    _ => {
+                        s.push('\\');
+                        s.push(c);
+                    }
+                }
+                escaped = false;
+                buf.next(); // Advance the buffer
+            }
+            // Escaped newline
+            None if escaped => {
+                match buf.next() {
+                    // Terminated immediately on the next line
+                    Some((_,'"')) => {
+                        s.push('\n'); // Append the newline to the string
+                        break;
+                    },
+                    // Not terminated, but there is another line
+                    Some((_,c)) => {
+                        s.push('\n'); // Push newline
+                        s.push(c); // Push char on next line
+                    },
+                    // No more lines. String literal not terminated
+                    None => {
+                        let msg = format!("EOF encountered in string literal: {}", s);
+                        panic!(msg)
+                    }
+                }
+            }
+            // Unescaped char
+            Some(c) => {
+                match c {
+                    '\\' => {
+                        buf.next();
+                        escaped = true
+                    },
+                    '"' => {
+                        buf.next();
+                        break
+                    },
+                    _ => {
+                        buf.next();
+                        s.push(c);
+                    }
+                }
+            }
+            // Unescaped newline
+            None => {
+                let msg = format!("Non-escaped multi-line string literal: {}", s);
+                panic!()
+            }
+        }
+    }
+
+    s
+}
+
 fn match_string_token(s: String) -> TokenKind {
     match s.to_lowercase().as_str() {
         // Keywords
@@ -315,12 +382,7 @@ pub fn Lex(mut buf: CharBuffer) -> Vec<Token> {
             },  
             // String literal
             '"' => {
-                let mut s = String::new();
-                while buf.peek().unwrap_or_default() != '"' {
-                    // TODO: Handle escaped newlines, quotes, etc.
-                    s.push(buf.next().unwrap_or_default().1);
-                }
-                buf.next();  // Eat the last "
+                let s = parse_str_literal(&mut buf);
                 Some(Token{kind:TokenKind::String(s), line})
             },
             // One and two char tokens
