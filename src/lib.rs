@@ -243,6 +243,9 @@ fn parse_str_literal(buf: &mut CharBuffer) -> String {
                 match c {
                     // '\b' is backspace, so we pop the last character
                     'b' => {s.pop();},
+                    // '\0' is null character, which is forbidden per COOL manual 
+                    '0' => panic!("Null char not allowed in string literals."),
+                    // All other chars are good
                     _ => {
                         s.push('\\');
                         s.push(c);

@@ -110,5 +110,10 @@ mod test {
     fn sort_list(){
         test_lex("sort_list");
     }
+
+    #[test]
+    fn string_test(){
+        test_lex("string_test");
+    }
 }
 
