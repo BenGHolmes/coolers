@@ -232,40 +232,49 @@ fn parse_str(c: char, buf: &mut CharBuffer) -> String {
     s
 }
 
-fn parse_str_literal(buf: &mut CharBuffer) -> String {
+fn parse_str_literal_token(buf: &mut CharBuffer) -> Token {
     let mut s = String::new();
     let mut escaped = false;
+    let mut line = 0;
 
     loop {
         match buf.peek() {
             // Some escaped char
             Some(c) if escaped => {
                 match c {
-                    // '\b' is backspace, so we pop the last character
-                    'b' => {s.pop();},
                     // '\0' is null character, which is forbidden per COOL manual 
                     '0' => panic!("Null char not allowed in string literals."),
-                    // All other chars are good
-                    _ => {
+                    // '\b', '\t', '\n', '\f', '\\', '\"' should all keep the escaping '\'
+                    'b' | 't' | 'n' | 'f' | '\\' | '"' => {
                         s.push('\\');
                         s.push(c);
                     }
+                    // All other chars we drop the escape char '\'
+                    _ => {
+                        s.push(c);
+                    }
                 }
-                escaped = false;
-                buf.next(); // Advance the buffer
+                escaped = false;  // No longer escaped
+                buf.next();  // Advance the buffer
             }
             // Escaped newline
             None if escaped => {
                 match buf.next() {
-                    // Terminated immediately on the next line
-                    Some((_,'"')) => {
-                        s.push('\n'); // Append the newline to the string
-                        break;
-                    },
-                    // Not terminated, but there is another line
-                    Some((_,c)) => {
-                        s.push('\n'); // Push newline
-                        s.push(c); // Push char on next line
+                    // Next line exists
+                    Some((l,c)) => {
+                        // Push "\n"
+                        s.push('\\');
+                        s.push('n');
+                        match c {
+                            // If first char on next line terminates string, break
+                            '"' => {
+                                // Update the line number first
+                                line = l;
+                                break;
+                            }
+                            // Otherwise add char to string
+                            _ => s.push(c),
+                        }
                     },
                     // No more lines. String literal not terminated
                     None => {
@@ -273,33 +282,36 @@ fn parse_str_literal(buf: &mut CharBuffer) -> String {
                         panic!(msg)
                     }
                 }
+                escaped = false;  // No longer escaped
             }
             // Unescaped char
             Some(c) => {
                 match c {
                     '\\' => {
-                        buf.next();
+                        buf.next();  // Advance buffer 
                         escaped = true
                     },
                     '"' => {
-                        buf.next();
-                        break
+                        // This terminates the string.
+                        // Update line number in case this is a multiline string.
+                        line = buf.next().unwrap().0; 
+                        break 
                     },
                     _ => {
-                        buf.next();
                         s.push(c);
+                        buf.next();
                     }
                 }
             }
             // Unescaped newline
             None => {
                 let msg = format!("Non-escaped multi-line string literal: {}", s);
-                panic!()
+                panic!(msg)
             }
         }
     }
 
-    s
+    Token{kind: TokenKind::String(s), line}
 }
 
 fn match_string_token(s: String) -> TokenKind {
@@ -385,8 +397,8 @@ pub fn Lex(mut buf: CharBuffer) -> Vec<Token> {
             },  
             // String literal
             '"' => {
-                let s = parse_str_literal(&mut buf);
-                Some(Token{kind:TokenKind::String(s), line})
+                let t = parse_str_literal_token(&mut buf);
+                Some(t)
             },
             // One and two char tokens
             ';' => Some(Token{kind:TokenKind::Semi, line}),
