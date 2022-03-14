@@ -2,7 +2,6 @@ use std::{
     fmt,
     fs::File,
     io::{BufRead, BufReader, Lines},
-    str::Chars,
 };
 
 /// Parsed token.

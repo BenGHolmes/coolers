@@ -1,9 +1,3 @@
-use std::{
-    fs::File,
-    io::{BufRead, BufReader, Lines},
-    str::Chars,
-};
-
 use clap::{ArgEnum, Parser};
 use coolers::{CharBuffer, Lex};
 
