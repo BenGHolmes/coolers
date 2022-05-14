@@ -1,5 +1,6 @@
 use clap::{ArgEnum, Parser};
-use coolers::{CharBuffer, Lex};
+use coolers::{CharBuffer, lex};
+use std::fs;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -23,7 +24,10 @@ fn main() {
     let args = Args::parse();
     match args.stage {
         Some(CompilerStage::Lexer) => {
-            let tokens = Lex(CharBuffer::new(args.file));
+            let input = fs::read_to_string(args.file).unwrap();
+            let buf = CharBuffer::new(&input);
+
+            let tokens = lex(buf);
             for t in tokens {
                 println!("{}", t)
             }

@@ -1,7 +1,6 @@
 use std::{
     fmt,
-    fs::File,
-    io::{BufRead, BufReader, Lines},
+    str::Chars
 };
 
 /// Parsed token.
@@ -156,51 +155,31 @@ impl fmt::Display for TokenKind {
     }
 }
 
-pub struct CharBuffer {
-    lines: Lines<BufReader<File>>,
-    cur_line: String,
-    line_num: usize,
+pub struct CharBuffer<'a> {
+    chars: Chars<'a>,
+    line_number: usize,
 }
 
-impl CharBuffer {
-    pub fn new(filename: String) -> Self {
-        let buffer = BufReader::new(File::open(filename).expect("failed to open file"));
-        let mut lines = buffer.lines();
-        let cur_line = lines.next().expect("empty file").expect("read error");
+impl<'a> CharBuffer<'a> {
+    pub fn new(input: &'a str) -> Self {
+        let chars = input.chars();
+
         Self {
-            lines,
-            cur_line,
-            line_num: 1,
+            chars, 
+            line_number: 1
         }
     }
 
-    /// Peek the next character, without crossing to new line
+    /// Peek the next character
     pub fn peek(&self) -> Option<char> {
-        self.cur_line.chars().next()
+        self.chars.clone().next()
     }
 }
 
-impl Iterator for CharBuffer {
-    type Item = (usize, char);
-    fn next(&mut self) -> Option<(usize, char)> {
-        while self.cur_line == "" {
-            match self.lines.next() {
-                Some(line) => {
-                    self.line_num += 1;
-                    self.cur_line = line.expect("file error");
-                }
-                None => return None,
-            }
-        }
-
-        let mut chars = self.cur_line.chars();
-        let next_char = chars.next();
-        self.cur_line = chars.collect::<String>();
-
-        match next_char {
-            Some(c) => Some((self.line_num, c)),
-            None => None,
-        }
+impl<'a> Iterator for CharBuffer<'a> {
+    type Item = char;
+    fn next(&mut self) -> Option<char> {
+        self.chars.next()
     }
 }
 
@@ -208,7 +187,7 @@ fn parse_digits(c: char, buf: &mut CharBuffer) -> usize {
     let mut value = c.to_digit(10).unwrap();
     while buf.peek().unwrap_or_default().is_digit(10) {
         value *= 10;
-        value += buf.next().unwrap().1.to_digit(10).unwrap();
+        value += buf.next().unwrap().to_digit(10).unwrap();
     }
 
     value as usize
@@ -225,19 +204,18 @@ fn is_ident(c: char) -> bool {
 fn parse_str(c: char, buf: &mut CharBuffer) -> String {
     let mut s = String::from(c);
     while is_ident(buf.peek().unwrap_or_default()) {
-        s.push(buf.next().unwrap().1);
+        s.push(buf.next().unwrap());
     }
 
     s
 }
 
-fn parse_str_literal_token(buf: &mut CharBuffer) -> Token {
+fn parse_str_literal(buf: &mut CharBuffer) -> String {
     let mut s = String::new();
     let mut escaped = false;
-    let mut line = 0;
 
     loop {
-        match buf.peek() {
+        match buf.next() {
             // Some escaped char
             Some(c) if escaped => {
                 match c {
@@ -248,69 +226,45 @@ fn parse_str_literal_token(buf: &mut CharBuffer) -> Token {
                         s.push('\\');
                         s.push(c);
                     }
+                    // Special case for '\n' since we need to increment line number
+                    '\n' => {
+                        buf.line_number += 1;
+                        s.push('\\');
+                        s.push('n');
+                    }
                     // All other chars we drop the escape char '\'
                     _ => {
                         s.push(c);
                     }
                 }
                 escaped = false;  // No longer escaped
-                buf.next();  // Advance the buffer
             }
-            // Escaped newline
-            None if escaped => {
-                match buf.next() {
-                    // Next line exists
-                    Some((l,c)) => {
-                        // Push "\n"
-                        s.push('\\');
-                        s.push('n');
-                        match c {
-                            // If first char on next line terminates string, break
-                            '"' => {
-                                // Update the line number first
-                                line = l;
-                                break;
-                            }
-                            // Otherwise add char to string
-                            _ => s.push(c),
-                        }
-                    },
-                    // No more lines. String literal not terminated
-                    None => {
-                        let msg = format!("EOF encountered in string literal: {}", s);
-                        panic!(msg)
-                    }
-                }
-                escaped = false;  // No longer escaped
-            }
+           
             // Unescaped char
             Some(c) => {
                 match c {
                     '\\' => {
-                        buf.next();  // Advance buffer 
                         escaped = true
                     },
                     '"' => {
                         // This terminates the string.
-                        // Update line number in case this is a multiline string.
-                        line = buf.next().unwrap().0; 
                         break 
                     },
+                    '\n' => {
+                        panic!("Non-escaped newline character in string literal")
+                    }
                     _ => {
                         s.push(c);
-                        buf.next();
                     }
                 }
             }
-            // Unescaped newline
             None => {
-                let msg = format!("Non-escaped multi-line string literal: {}", s);
-                panic!(msg)
+                panic!("EOF encountered before end of string literal")
             }
         }
     }
 
-    Token{kind: TokenKind::String(s), line}
+    s
 }
 
 fn match_string_token(s: String) -> TokenKind {
@@ -351,25 +305,30 @@ fn match_string_token(s: String) -> TokenKind {
     }
 }
 
-pub fn Lex(mut buf: CharBuffer) -> Vec<Token> {
+pub fn lex(mut buf: CharBuffer) -> Vec<Token> {
     let mut tokens = vec![];
 
-    while let Some((line,char)) = buf.next() {
-        let token = match char {
+    while let Some(char) = buf.next() {
+        let tokenkind = match char {
+            // Increment line number if we hit a newline
+            '\n' => {
+                buf.line_number += 1;
+                None
+            }
             // Ignore whitespace
             c if c.is_whitespace() => {
-                while buf.peek().unwrap_or_default().is_whitespace() {
-                    buf.next();
-                }
                 None
             }
             // Ignore linecomments
             '-' if buf.peek().unwrap_or_default() == '-' => {
-                // peek returns None at the end of the line, so this 
-                // eats the rest of the line
-                while buf.peek().is_some() {
-                    buf.next();
+                // Eat until newline
+                while let Some(c) = buf.next() {
+                    if c == '\n' {
+                        buf.line_number += 1;    
+                        break;
+                    }
                 }
+
                 None
             }
             // Ignore multiline comments
@@ -378,13 +337,15 @@ pub fn Lex(mut buf: CharBuffer) -> Vec<Token> {
                 let mut comment_depth = 1;
                 
                 while comment_depth != 0 {
-                    let c = buf.next().unwrap().1;
+                    let c = buf.next().unwrap();
                     if c == '(' && buf.peek().unwrap_or_default() == '*' {
                         buf.next();
                         comment_depth += 1;
                     } else if c == '*' && buf.peek().unwrap_or_default() == ')' {
                         buf.next();
                         comment_depth -= 1;
+                    } else if c == '\n' {
+                        buf.line_number += 1;
                     }
                 }
                 None
@@ -392,62 +353,62 @@ pub fn Lex(mut buf: CharBuffer) -> Vec<Token> {
             // Integer literal (negatives parsed as "-" "INT_lITERAL" so these are always unsigned)
             c if c.is_digit(10) => {
                 let value = parse_digits(c, &mut buf);
-                Some(Token{kind: TokenKind::Integer(value as usize), line})
+                Some(TokenKind::Integer(value as usize))
             },  
             // String literal
             '"' => {
-                let t = parse_str_literal_token(&mut buf);
-                Some(t)
+                let s = parse_str_literal(&mut buf);
+                Some(TokenKind::String(s))
             },
             // One and two char tokens
-            ';' => Some(Token{kind:TokenKind::Semi, line}),
-            ',' => Some(Token{kind:TokenKind::Comma, line}),
-            '.' => Some(Token{kind:TokenKind::Dot, line}),
-            '(' => Some(Token{kind:TokenKind::OpenParen, line}),
-            ')' => Some(Token{kind:TokenKind::CloseParen, line}),
-            '{' => Some(Token{kind:TokenKind::OpenBrace, line}),
-            '}' => Some(Token{kind:TokenKind::CloseBrace, line}),
-            '@' => Some(Token{kind:TokenKind::At, line}),
-            '~' => Some(Token{kind:TokenKind::Tilde, line}),
-            ':' => Some(Token{kind:TokenKind::Colon, line}),
+            ';' => Some(TokenKind::Semi),
+            ',' => Some(TokenKind::Comma),
+            '.' => Some(TokenKind::Dot),
+            '(' => Some(TokenKind::OpenParen),
+            ')' => Some(TokenKind::CloseParen),
+            '{' => Some(TokenKind::OpenBrace),
+            '}' => Some(TokenKind::CloseBrace),
+            '@' => Some(TokenKind::At),
+            '~' => Some(TokenKind::Tilde),
+            ':' => Some(TokenKind::Colon),
             '=' => {
                 match buf.peek().unwrap_or_default() {
                     
                     '>' => {
                         buf.next();
-                        Some(Token{kind: TokenKind::DArrow, line})
+                        Some(TokenKind::DArrow)
                     },
-                    _ => Some(Token{kind:TokenKind::Eq, line})
+                    _ => Some(TokenKind::Eq)
                 }
             },
             '<' => {
                 match buf.peek().unwrap_or_default() {
                     '-' => {
                         buf.next();
-                        Some(Token{kind: TokenKind::Assign, line})
+                        Some(TokenKind::Assign)
                     }
                     '=' => {
                         buf.next();
-                        Some(Token{kind: TokenKind::LE, line})
+                        Some(TokenKind::LE)
                     }
-                    _ => Some(Token{kind:TokenKind::Lt, line}),
+                    _ => Some(TokenKind::Lt),
                 }
             },    
-            '-' => Some(Token{kind:TokenKind::Minus, line}),
-            '+' => Some(Token{kind:TokenKind::Plus, line}),
-            '*' => Some(Token{kind:TokenKind::Star, line}),
-            '/' => Some(Token{kind:TokenKind::Slash, line}),
+            '-' => Some(TokenKind::Minus),
+            '+' => Some(TokenKind::Plus),
+            '*' => Some(TokenKind::Star),
+            '/' => Some(TokenKind::Slash),
 
             // Keywords and identifiers
             c => {
                 let s = parse_str(c, &mut buf);
                 let kind = match_string_token(s);
-                Some(Token{kind,line})
+                Some(kind)
             }
         };
 
-        if token.is_some() {
-            tokens.push(token.unwrap())
+        if tokenkind.is_some() {
+            tokens.push(Token::new(tokenkind.unwrap(), buf.line_number ))
         }
     }
     

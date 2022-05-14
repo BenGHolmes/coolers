@@ -1,12 +1,13 @@
 mod test {
     use std::fs;
-    use coolers::{CharBuffer,Lex};
-    use std::io::{BufReader,BufRead,Lines};
+    use coolers::{CharBuffer,lex};
+    use std::io::{BufReader,BufRead};
     use std::fs::File;
 
     fn test_lex(filename: &str) {
         let cl_path = format!("./tests/lexer/example-cool-programs/{}.cl", filename);
-        let tokens = Lex(CharBuffer::new(cl_path));
+        let input = fs::read_to_string(cl_path).unwrap();
+        let tokens = lex(CharBuffer::new(&input));
     
         let lex_path  = format!("./tests/lexer/expected-lexer-outputs/{}.lex", filename);
         let buffer = BufReader::new(File::open(lex_path).expect("failed to open file"));
