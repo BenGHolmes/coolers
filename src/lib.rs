@@ -407,8 +407,8 @@ pub fn lex(mut buf: CharBuffer) -> Vec<Token> {
             }
         };
 
-        if tokenkind.is_some() {
-            tokens.push(Token::new(tokenkind.unwrap(), buf.line_number ))
+        if let Some(kind) = tokenkind {
+            tokens.push(Token::new(kind, buf.line_number ))
         }
     }
     
